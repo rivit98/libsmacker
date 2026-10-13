@@ -1,0 +1,44 @@
+# 8.plan - eight lanes, one per physical core of a workstation.
+#
+# Approach
+#   Eight cores leave no room for duplicates, so the plan keeps one of each
+#   lane that finds something the others cannot and spends the other four
+#   cores on search diversity:
+#     - main: the sync hub, and the only lane that runs the deterministic stage
+#     - asan: sanitizers on every exec, for what SAND's coverage_increase mode
+#       lets through
+#     - cmplogat + laf: the two ways past multi-byte comparisons (keywords,
+#       tag prefixes, magic values) - input-to-state solving and split compares
+#     - four native lanes that differ in power schedule, mutation strategy,
+#       format hint, trimming and dictionary, all carrying SAND oracles
+#   lsan is left out: at ~85 execs/s it would cost an eighth of the campaign,
+#   for leak findings that have mostly been harness artifacts. 16.plan has it.
+#
+# What every flag and variable does: README.md, "Plan parameters".
+# Line format and tokens: lib/run.sh. Every lane but main also gets -S <name> -z.
+#
+# Accounting (fuzzing_in_depth.md, "Using multiple cores"):
+#   special (4)    main; asan; cmplog -l 2AT; laf
+#   others  (4)    -Z 1  AFL_DISABLE_TRIM 2 (50%)  -P explore 2  -P exploit 1
+#                  no -a 1  MOpt 1
+#   no dictionary  fast
+#   SAND           ASAN oracle on every native/laf/cmplog lane, MSAN on 3
+#
+# name       | variant | afl-fuzz args                                                         | env
+
+# Sync hub: -M, deterministic stage, AFL_FINAL_SYNC=1 so ./fuzz cmin reads one queue.
+main         | fast    | -x DICT -w ASAN_ORACLE -w MSAN_ORACLE                                 | AFL_FINAL_SYNC=1
+# Full ASAN+UBSAN on every exec, ~1/5 native speed; -P explore keeps it on new paths.
+asan         | asan    | -P explore -x DICT -t TIMEOUT_SAN                                     |
+# RedQueen with arithmetic and transform solving; skips the seeds (CMPLOG_ONLY_NEW).
+cmplogat     | fast    | -c CMPLOG -l 2AT -x DICT -a FMT -w ASAN_ORACLE                        | AFL_CMPLOG_ONLY_NEW=1
+# laf-intel build: a 4-byte compare becomes four edges, so partial matches count.
+laf          | laf     | -x DICT -a FMT -w ASAN_ORACLE                                         |
+# Breadth: explore schedule and strategy, no trimming, both oracles.
+explore      | fast    | -p explore -P explore -x DICT -a FMT -w ASAN_ORACLE -w MSAN_ORACLE    | AFL_DISABLE_TRIM=1
+# Mutation without the dictionary (the LTO autodictionary still applies).
+fast         | fast    | -p fast -P explore -a FMT -w ASAN_ORACLE                              |
+# Depth: exploit strategy and sequential queue walk (-Z) over existing entries.
+exploit      | fast    | -p exploit -P exploit -Z -x DICT -a FMT -w ASAN_ORACLE                | AFL_DISABLE_TRIM=1
+# MOpt operator scheduling, coe schedule, generic mutators (no -a), both oracles.
+mopt         | fast    | -L -p coe -x DICT -w ASAN_ORACLE -w MSAN_ORACLE                       |

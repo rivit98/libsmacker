@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# libsmacker fuzzing - one entry point for the whole campaign.
+#
+#   ./fuzz <command> [options]
+#
+# Commands live in fuzzer/lib/<command>.sh and are sourced, not exec'd, so they
+# share the configuration, the logging and the backend plumbing in
+# fuzzer/lib/common.sh.
+# Run ./fuzz help for the list, or ./fuzz <command> --help for one.
+
+set -euo pipefail
+
+# This script sits at the repository root; everything it drives lives in fuzzer/.
+FUZZ_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/fuzzer"
+LIB_DIR="$FUZZ_ROOT/lib"
+export FUZZ_ROOT LIB_DIR
+PROG="$(basename "${BASH_SOURCE[0]:-$0}")"
+
+COMMANDS=(deps build seeds run status stop triage triage-all grab cmin coverage clean)
+
+usage() {
+  cat <<USAGE
+$PROG <command> [options]
+
+  deps        check that every tool the commands need is installed
+  build       build the harness variants (all, or the ones named)
+  seeds       build the seed corpus, minimized with afl-cmin
+  run         start the multi-core campaign in tmux
+  status      campaign dashboard and health checks (--loop)
+  stop        stop the campaign
+  triage      replay one artifact through the sanitizer builds
+  triage-all  replay every crash and hang of a campaign through triage
+  grab        move the crashes and hangs of remote hosts here: -o DIR IP...
+  cmin        minimize the campaign queue for the next run
+  coverage    coverage report (cov-analysis), or --edges for the AFL-only metric
+  clean       remove the named builds, logs, state, crashes or containers
+
+  help        this text
+
+Every command answers -h (or --help) with its own options, before it resolves a
+backend or builds anything: $PROG triage -h
+
+The AFL++ toolchain needs no setup: FUZZ_BACKEND=auto (the default) uses a
+local AFL++ when there is one and the docker image otherwise, pulling it on
+first use. Force one with FUZZ_BACKEND=docker or FUZZ_BACKEND=host.
+
+FUZZ_GROUP=<group> starts a campaign from fuzzer/seeds/<group> and names its
+state, so groups run side by side; unset, it starts from one empty seed.
+TC=<group function or test case> restricts the harness; unset, every test case
+runs. The two are independent.
+
+Common environment: FUZZ_BACKEND=auto|docker|host, FUZZ_GROUP=<group>,
+TC=<test case>, JOBS=<n>, FUZZ_DIR=<path>.
+See fuzzer/README.md for the campaign layout and .claude/CLAUDE.md for triage.
+USAGE
+}
+
+cmd="${1:-help}"
+[ $# -gt 0 ] && shift
+
+case "$cmd" in
+  help|-h|--help) usage; exit 0 ;;
+esac
+
+found=0
+for c in "${COMMANDS[@]}"; do [ "$c" = "$cmd" ] && found=1; done
+if [ "$found" -eq 0 ]; then
+  echo "$PROG: unknown command '$cmd'" >&2
+  echo >&2
+  usage >&2
+  exit 1
+fi
+
+# common.sh resolves the backend and defines log()/die()/afl_run()/...
+# shellcheck source=lib/common.sh
+source "$LIB_DIR/common.sh"
+
+# The command file runs top to bottom with "$@" as its arguments, exactly as a
+# standalone script would - including its own exit status.
+# shellcheck source=/dev/null
+source "$LIB_DIR/$cmd.sh"

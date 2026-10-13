@@ -1,0 +1,46 @@
+# Smacker (.smk) tokens for afl-fuzz -x. Every input is a plain .smk file, so
+# the signature sits at offset 0.
+
+# signature + version
+sig_smk2="SMK2"
+sig_smk4="SMK4"
+sig_smk="SMK"
+
+# video flags (little-endian u32): ring frame, Y-double, Y-interlace
+vflag_ring="\x01\x00\x00\x00"
+vflag_ydouble="\x02\x00\x00\x00"
+vflag_yinterlace="\x04\x00\x00\x00"
+vflag_all="\x07\x00\x00\x00"
+
+# audio rate words: bit 30 exists, 31 compressed, 29 16-bit, 28 stereo,
+# 26-27 Bink; low 24 bits are the rate (22050 = 0x5622)
+arate_raw8_mono="\x22\x56\x00\x40"
+arate_raw16_stereo="\x22\x56\x00\x70"
+arate_dpcm8_mono="\x22\x56\x00\xc0"
+arate_dpcm16_stereo="\x22\x56\x00\xf0"
+arate_bink="\x22\x56\x00\x4c"
+
+# frame types: palette, audio tracks
+ftype_pal="\x01"
+ftype_pal_audio0="\x03"
+ftype_audio0="\x02"
+ftype_all="\xff"
+
+# frame sizes with the keyframe bit
+chunk_key="\x41\x00\x00\x00"
+
+# huff16 tree sizes: 12 + 4 * entries, multiple of 4
+tree_size_min="\x0c\x00\x00\x00"
+tree_size_small="\x10\x00\x00\x00"
+
+# palette records: skip 128, copy 64 from 0, set colour
+pal_skip_all="\xff\xff"
+pal_copy="\x7f\x00"
+pal_set="\x3f\x3f\x3f"
+
+# frame counts / dimensions
+u32_zero="\x00\x00\x00\x00"
+u32_one="\x01\x00\x00\x00"
+u32_max="\xff\xff\xff\xff"
+u32_8="\x08\x00\x00\x00"
+u32_640="\x80\x02\x00\x00"

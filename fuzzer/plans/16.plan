@@ -1,0 +1,61 @@
+# 16.plan - sixteen lanes.
+#
+# Approach
+#   8.plan plus what it could not afford:
+#     - lsan: per-input leaks, the bug class SAND has no oracle for - slow
+#       enough that it only pays off with cores to spare
+#     - asan2: a second full ASAN lane, under the fast schedule and the
+#       exploit strategy
+#     - cmplog2: a second comparison solver, plain level 2 without -a, so the
+#       two CMPLOG lanes do not make the same guesses
+#     - five more native lanes, enough for every power schedule to run once
+#   Every 8.plan lane is here with the same settings, except that fast also
+#   skips trimming; cmplog2 takes mopt's place among the first eight.
+#
+# What every flag and variable does: README.md, "Plan parameters".
+# Line format and tokens: lib/run.sh. Every lane but main also gets -S <name> -z.
+#
+# Accounting (fuzzing_in_depth.md, "Using multiple cores"):
+#   special (7)    main; asan x2, lsan; cmplog x2 (one -l 2AT); laf
+#   others  (9)    -Z 1 (11%)  AFL_DISABLE_TRIM 6 (67%)  -P explore 4 (44%)
+#                  -P exploit 2 (22%)  no -a 3 (33%)  MOpt 1
+#                  schedules: explore fast exploit coe rare lin quad seek mmopt
+#   no dictionary  fast, seek
+#   SAND           ASAN oracle on every native/laf/cmplog lane, MSAN on 5
+#
+# Order matters only when JOBS < 16: the first lanes are kept.
+#
+# name       | variant | afl-fuzz args                                                         | env
+
+# Sync hub: -M, deterministic stage, AFL_FINAL_SYNC=1 so ./fuzz cmin reads one queue.
+main         | fast    | -x DICT -w ASAN_ORACLE -w MSAN_ORACLE                                 | AFL_FINAL_SYNC=1
+# Full ASAN+UBSAN on every exec, ~1/5 native speed; -P explore keeps it on new paths.
+asan         | asan    | -P explore -x DICT -t TIMEOUT_SAN                                     |
+# RedQueen with arithmetic and transform solving; skips the seeds (CMPLOG_ONLY_NEW).
+cmplogat     | fast    | -c CMPLOG -l 2AT -x DICT -a FMT -w ASAN_ORACLE                        | AFL_CMPLOG_ONLY_NEW=1
+# laf-intel build: a 4-byte compare becomes four edges, so partial matches count.
+laf          | laf     | -x DICT -a FMT -w ASAN_ORACLE                                         |
+# Breadth: explore schedule and strategy, no trimming, both oracles.
+explore      | fast    | -p explore -P explore -x DICT -a FMT -w ASAN_ORACLE -w MSAN_ORACLE    | AFL_DISABLE_TRIM=1
+# Mutation without the dictionary (the LTO autodictionary still applies).
+fast         | fast    | -p fast -P explore -a FMT -w ASAN_ORACLE                              | AFL_DISABLE_TRIM=1
+# RedQueen at plain level 2 with generic mutators: different guesses than cmplogat.
+cmplog2      | fast    | -c CMPLOG -l 2 -x DICT -w ASAN_ORACLE                                 | AFL_CMPLOG_ONLY_NEW=1
+# Depth: exploit strategy and sequential queue walk (-Z) over existing entries.
+exploit      | fast    | -p exploit -P exploit -Z -x DICT -a FMT -w ASAN_ORACLE                | AFL_DISABLE_TRIM=1
+# Per-input leak check (__AFL_LEAK_CHECK), ~85 execs/s.
+lsan         | lsan    | -P explore -x DICT -t TIMEOUT_SAN                                     |
+# MOpt operator scheduling, coe schedule, generic mutators (no -a), both oracles.
+mopt         | fast    | -L -p coe -x DICT -w ASAN_ORACLE -w MSAN_ORACLE                       |
+# rare schedule: energy to entries that hit rarely-taken edges.
+rare         | fast    | -p rare -P explore -x DICT -a FMT -w ASAN_ORACLE                      |
+# lin schedule, generic mutators.
+lin          | fast    | -p lin -P explore -x DICT -w ASAN_ORACLE                              | AFL_DISABLE_TRIM=1
+# quad schedule under the exploit strategy, both oracles.
+quad         | fast    | -p quad -P exploit -x DICT -a FMT -w ASAN_ORACLE -w MSAN_ORACLE       | AFL_DISABLE_TRIM=1
+# seek schedule, no dictionary, default strategy switching.
+seek         | fast    | -p seek -a FMT -w ASAN_ORACLE                                         | AFL_DISABLE_TRIM=1
+# Second full ASAN lane: fast schedule under the exploit strategy.
+asan2        | asan    | -p fast -P exploit -x DICT -a FMT -t TIMEOUT_SAN                      |
+# mmopt schedule (extra energy for the newest entries), generic mutators, both oracles.
+mmopt        | fast    | -p mmopt -x DICT -w ASAN_ORACLE -w MSAN_ORACLE                        |
